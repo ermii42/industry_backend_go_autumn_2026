@@ -1,7 +1,6 @@
 package main
 
 import (
-	"math"
 	"sync"
 	"time"
 )
@@ -19,35 +18,36 @@ type Limiter struct {
 
 func NewLimiter(clock Clock, ratePerSec float64, burst int) *Limiter {
 	limiter := &Limiter{
-		clock:      clock,
-		capacity:   burst,
-		refillRate: math.Max(0, ratePerSec),
+		clock: clock,
+		rate:  ratePerSec,
+		burst: burst,
 	}
 	if clock == nil || burst <= 0 {
 		return limiter
 	}
-	limiter.accountedAt = clock.Now()
+	limiter.tokens = float64(burst)
+	limiter.last = clock.Now()
 	return limiter
 }
 
 func (l *Limiter) AllowN(n int) bool {
-	if l.clock == nil || n <= 0 || n > l.capacity {
+	if l.clock == nil || n <= 0 || n > l.burst {
 		return false
 	}
 
 	l.mu.Lock()
 	defer l.mu.Unlock()
 
-	if observed := l.clock.Now(); observed.After(l.accountedAt) {
-		elapsed := observed.Sub(l.accountedAt).Seconds()
-		l.spent = math.Max(0, l.spent-elapsed*l.refillRate)
-		l.accountedAt = observed
+	if observed := l.clock.Now(); observed.After(l.last) {
+		if l.rate > 0 {
+			l.tokens = min(float64(l.burst), l.tokens+observed.Sub(l.last).Seconds()*l.rate)
+		}
+		l.last = observed
 	}
 
-	available := float64(l.capacity) - l.spent
-	allowed := float64(n) <= available
-	if allowed {
-		l.spent += float64(n)
+	if l.tokens < float64(n) {
+		return false
 	}
-	return allowed
+	l.tokens -= float64(n)
+	return true
 }

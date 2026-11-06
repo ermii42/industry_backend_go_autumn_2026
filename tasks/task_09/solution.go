@@ -24,14 +24,11 @@ func ParallelMap[T any, R any](ctx context.Context, workers int, in []T, fn func
 	if len(in) == 0 {
 		return results, nil
 	}
-	count := workers
-	if count > len(in) {
-		count = len(in)
-	}
+	workers = min(workers, len(in))
 	jobs := make(chan int)
 	var wg sync.WaitGroup
-	wg.Add(count)
-	for i := 0; i < count; i++ {
+	wg.Add(workers)
+	for range workers {
 		go func() {
 			defer wg.Done()
 			for index := range jobs {
